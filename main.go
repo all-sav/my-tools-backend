@@ -44,7 +44,7 @@ func startHTTPServer() {
 	authGroup.Use(authMiddleware())
 	{
 		authGroup.POST("/merge", handleMerge)
-		authGroup.POST("/logout", handleLogout)
+		authGroup.POST("/auth/logout", handleLogout)
 	}
 
 	// Создаём TLS-конфигурацию
