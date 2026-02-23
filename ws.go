@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -17,9 +20,26 @@ const (
 	WSMessageTypeHeader  = "header"
 )
 
+type WSMessage struct {
+	Message string `json:"message,omitempty"`
+	Type    string `json:"type,omitempty"`
+}
+
+type AuthMessage struct {
+	Type     string `json:"type"`
+	UserId   int    `json:"userId"`
+	ClientId string `json:"clientId"`
+}
+
+type Client struct {
+	conn   *websocket.Conn
+	id     string
+	userId int // Добавляем userId для связи с авторизованным пользователем
+}
+
 var (
 	allowedOrigins = map[string]bool{
-		"https://localhost:8085":             true,
+		"https://localhost:3000":             true,
 		"https://bh-a1.cow-and-dog.com:8075": true,
 	}
 	upgrader = websocket.Upgrader{
@@ -30,21 +50,9 @@ var (
 			return allowedOrigins[origin]
 		},
 	}
+	wsClients = make(map[string]*Client)
+	mutex     = sync.Mutex{}
 )
-
-type (
-	WSMessage struct {
-		Message string `json:"message,omitempty"`
-		Type    string `json:"type,omitempty"`
-	}
-	Client struct {
-		conn *websocket.Conn
-		id   string
-	}
-)
-
-var clients = make(map[string]*Client) // ID → Client
-var mutex = sync.Mutex{}
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -55,8 +63,6 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 
 	conn.SetReadLimit(65536)
-
-	// Обработчик pong
 	conn.SetPongHandler(func(appData string) error {
 		log.Println("Получен pong от клиента")
 		return conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -64,17 +70,22 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 	clientID := uuid.New().String()
 	client := &Client{
-		conn: conn,
-		id:   clientID,
+		conn:   conn,
+		id:     clientID,
+		userId: 0, // По умолчанию не авторизован
 	}
 
 	mutex.Lock()
-	clients[clientID] = client
+	wsClients[clientID] = client
 	mutex.Unlock()
 
 	defer func() {
 		mutex.Lock()
-		delete(clients, clientID)
+		// Если клиент был авторизован, удаляем его из Redis
+		if client.userId != 0 {
+			redisClient.Del(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(client.userId))
+		}
+		delete(wsClients, clientID)
 		mutex.Unlock()
 	}()
 
@@ -98,13 +109,42 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 
 		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 
-		// Обрабатываем ping сообщения от клиента
+		// Пробуем распарсить как JSON
 		var msg map[string]interface{}
 		if err := json.Unmarshal(message, &msg); err == nil {
+			// Обрабатываем ping
 			if msg["type"] == "ping" {
 				pongMsg := map[string]string{"type": "pong"}
 				if err := conn.WriteJSON(pongMsg); err != nil {
 					log.Printf("Ошибка отправки pong: %v", err)
+				}
+				continue
+			}
+
+			// Обрабатываем auth сообщение
+			if msg["type"] == "auth" {
+				var authMsg AuthMessage
+				if err := json.Unmarshal(message, &authMsg); err == nil {
+					// Сохраняем связку userId -> websocketId в Redis
+					ttl, _ := time.ParseDuration(os.Getenv("TOKEN_TTL"))
+					if ttl == 0 {
+						ttl = 24 * time.Hour
+					}
+
+					err = redisClient.Set(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(authMsg.UserId), clientID, ttl).Err()
+					if err != nil {
+						log.Printf("Ошибка сохранения websocket ID в Redis: %v", err)
+					} else {
+						// Обновляем userId у клиента
+						client.userId = authMsg.UserId
+
+						// Отправляем подтверждение
+						conn.WriteJSON(map[string]interface{}{
+							"type":   "auth_success",
+							"userId": authMsg.UserId,
+						})
+						log.Printf("WebSocket авторизован для пользователя %d с ID %s", authMsg.UserId, clientID)
+					}
 				}
 				continue
 			}
@@ -114,13 +154,21 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func sendMessageByID(id string, message string, WSMessageType string) {
+// Обновленная функция отправки сообщений - проверяет актуальность соединения
+func sendMessageByID(userId int, message string, WSMessageType string) {
+	// Ищем clientId по userId в Redis
+	clientId, err := redisClient.Get(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(userId)).Result()
+	if err != nil {
+		log.Printf("WebSocket ID для пользователя %d не найден в Redis", userId)
+		return
+	}
+
 	mutex.Lock()
-	client, exists := clients[id]
+	client, exists := wsClients[clientId]
 	mutex.Unlock()
 
-	if !exists {
-		log.Printf("WS-Клиент %s не найден", id)
+	if !exists || client.conn == nil {
+		log.Printf("WebSocket клиент %s не найден в памяти", clientId)
 		return
 	}
 
@@ -137,45 +185,11 @@ func sendMessageByID(id string, message string, WSMessageType string) {
 
 	err = client.conn.WriteMessage(websocket.TextMessage, jsonData)
 	if err != nil {
-		log.Print("ошибка отправки соообщения по ws")
-	}
-}
-
-// Функция для отправки сообщения всем подключённым клиентам
-func broadcastMessage(message []byte) {
-	mutex.Lock()
-	// Копируем соединения в отдельный срез (чтобы не держать mutex при отправке)
-	currentClients := make([]*websocket.Conn, 0, len(clients))
-	for _, client := range clients {
-		currentClients = append(currentClients, client.conn)
-	}
-	mutex.Unlock()
-
-	// Отправляем сообщение каждому клиенту
-	for _, conn := range currentClients { // Используем _, conn (а не conn := range)
-		err := conn.WriteMessage(websocket.TextMessage, message)
-		if err != nil {
-			log.Printf("Ошибка отправки сообщения клиенту: %v", err)
-
-			// Ищем и удаляем клиента по соединению
-			mutex.Lock()
-			for id, client := range clients {
-				if client.conn == conn {
-					client.conn.Close()
-					delete(clients, id)
-					log.Printf("Клиент с ID %s удалён из‑за ошибки отправки", id)
-					break
-				}
-			}
-			mutex.Unlock()
-		}
-	}
-}
-
-func startWSServer() {
-	http.HandleFunc("/ws", wsHandler)
-	log.Printf("WebSocket-сервер запущен на %s", WSPort)
-	if err := http.ListenAndServe(WSPort, nil); err != nil {
-		log.Fatalf("Ошибка WebSocket-сервера: %v", err)
+		log.Printf("Ошибка отправки сообщения по ws: %v", err)
+		// При ошибке удаляем клиента
+		mutex.Lock()
+		delete(wsClients, clientId)
+		mutex.Unlock()
+		redisClient.Del(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(userId))
 	}
 }

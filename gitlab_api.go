@@ -30,11 +30,12 @@ func branchExistsInRepo(branch string, projectId string) (bool, error) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		return true, nil
-	} else if resp.StatusCode == http.StatusNotFound {
+	case http.StatusNotFound:
 		return false, nil
-	} else {
+	default:
 		body, _ := io.ReadAll(resp.Body)
 		return false, fmt.Errorf(
 			"API ошибка: %d %s", resp.StatusCode, string(body))
@@ -286,4 +287,43 @@ func acceptMergeRequest(mrID int, projectId string) error {
 	}
 
 	return nil
+}
+
+type GitLabUser struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	Email    string `json:"email"`
+}
+
+func findGitLabUserID(username string) (int, error) {
+	url := fmt.Sprintf("%s/users?username=%s", GitlabApiUrl, username)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, err
+	}
+
+	req.Header.Set("Private-Token", GitlabAccessToken)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("GitLab API error: %d", resp.StatusCode)
+	}
+
+	var users []GitLabUser
+	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+		return 0, err
+	}
+
+	if len(users) == 0 {
+		return 0, fmt.Errorf("пользователь %s не найден", username)
+	}
+
+	return users[0].ID, nil
 }

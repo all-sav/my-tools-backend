@@ -2,12 +2,11 @@ package main
 
 import (
 	"crypto/tls"
-	"github.com/gin-gonic/gin"
-	"html/template"
 	"log"
-	"mergenator/tools"
 	"net/http"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 var (
@@ -22,11 +21,9 @@ type Repository struct {
 
 func main() {
 	setEnvs()
+	initRedis()
 
-	// Запускаем HTTP-сервер в отдельной горутине
 	go startHTTPServer()
-	// Запускаем WebSocket-сервер в отдельной горутине
-	// go startWSServer()
 
 	select {}
 }
@@ -34,29 +31,25 @@ func main() {
 func startHTTPServer() {
 	router := gin.Default()
 
-	router.SetFuncMap(template.FuncMap{
-		"isCurrentPage": func(t time.Time) string {
-			return t.Format("2006-01-02")
-		},
-	})
-
-	router.LoadHTMLGlob("web/templates/**/*.tmpl")
-	router.Static("/static", "./web/static")
-	router.StaticFile("/favicon.ico", "./web/static/img/favicon.ico")
-	router.StaticFile("/", "./web/templates/pages/myTools.html")
-
-	router.GET("/mergenator", getMergenatorPage)
-	router.POST("/merge", handleMerge)
+	// Публичные роуты (без авторизации)
+	router.POST("/auth/login", handleLogin)
 	router.POST("/webhook/on-push", handleWebhook)
-	router.GET("/tools", tools.GetToolsPage)
 
 	router.GET("/ws", func(c *gin.Context) {
 		wsHandler(c.Writer, c.Request)
 	})
 
+	// Приватные роуты (с авторизацией)
+	authGroup := router.Group("/")
+	authGroup.Use(authMiddleware())
+	{
+		authGroup.POST("/merge", handleMerge)
+		authGroup.POST("/logout", handleLogout)
+	}
+
 	// Создаём TLS-конфигурацию
 	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12, // Минимальная версия TLS
+		MinVersion: tls.VersionTLS12,
 	}
 
 	if OverProxy {
@@ -64,9 +57,8 @@ func startHTTPServer() {
 			panic(err)
 		}
 	} else {
-		// Создаём HTTP-сервер с TLS-конфигурацией
 		server := &http.Server{
-			Addr:      "localhost" + HttpPort, // например, ":8085"
+			Addr:      "localhost" + HttpPort,
 			Handler:   router,
 			TLSConfig: tlsConfig,
 		}
@@ -77,17 +69,4 @@ func startHTTPServer() {
 			log.Fatalf("HTTPS server failed to start: %v", err)
 		}
 	}
-}
-
-func getMergenatorPage(c *gin.Context) {
-	_, err := c.Cookie("gitlab_user_id")
-	if err != nil {
-		c.HTML(200, "login.tmpl", gin.H{})
-		return
-	}
-
-	c.HTML(200, "mergenator.tmpl", gin.H{
-		"PageTitle": "Мерженатор",
-		"CurPage":   "mergenator",
-	})
 }
