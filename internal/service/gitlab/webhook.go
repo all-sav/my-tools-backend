@@ -1,13 +1,15 @@
-package main
+package gitlab
 
 import (
 	"errors"
-	"github.com/gin-gonic/gin"
 	"log"
+	"mergenator/internal/config"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 type GitLabWebhook struct {
@@ -78,7 +80,7 @@ func onPush(webhookData GitLabWebhook) {
 
 	// Проверка существования CI-ветки
 	log.Printf("CI: %s Pr: %s", ciBranch, projectID)
-	ciExists, err := branchExistsInRepo(ciBranch, projectID)
+	ciExists, err := BranchExistsInRepo(ciBranch, projectID)
 	if err != nil {
 		log.Printf("Ошибка проверки CI‑ветки: %v", err)
 		return
@@ -89,7 +91,7 @@ func onPush(webhookData GitLabWebhook) {
 	}
 
 	// Проверка открытого MR для CI‑ветки
-	hasMR, _, _, err := hasOpenMR(ciBranch, getStandBranchByProjectID(projectID), projectID)
+	hasMR, _, _, err := HasOpenMR(ciBranch, getStandBranchByProjectID(projectID), projectID)
 	if err != nil {
 		log.Printf("Ошибка проверки MR для CI‑ветки: %v", err)
 		return
@@ -100,13 +102,13 @@ func onPush(webhookData GitLabWebhook) {
 	}
 
 	// Мержим исходную ветку в CI-ветку
-	hasMR, mrID, _, err := hasOpenMR(webhookData.Branch, ciBranch, projectID)
+	hasMR, mrID, _, err := HasOpenMR(webhookData.Branch, ciBranch, projectID)
 	if err != nil {
 		log.Printf("ошибка проверки существующих MR: %v", err)
 		return
 	}
 	if !hasMR {
-		mrID, err = mergeBranchInto(webhookData.Branch, ciBranch, projectID)
+		mrID, err = MergeBranchInto(webhookData.Branch, ciBranch, projectID)
 		if err != nil {
 			log.Printf("не удалось создать MR: %v", err)
 			return
@@ -115,7 +117,7 @@ func onPush(webhookData GitLabWebhook) {
 		time.Sleep(3 * time.Second)
 		log.Printf("Просыпаемся...")
 	}
-	if err := acceptMergeRequest(mrID, projectID); err != nil {
+	if err := AcceptMergeRequest(mrID, projectID); err != nil {
 		log.Printf("не удалось принять MR %d: %v", mrID, err)
 	}
 }

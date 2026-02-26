@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"mergenator/db"
 	"net/http"
 	"os"
 	"strconv"
@@ -83,7 +84,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 		mutex.Lock()
 		// Если клиент был авторизован, удаляем его из Redis
 		if client.userId != 0 {
-			redisClient.Del(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(client.userId))
+			db.RedisClient.Del(db.Ctx, db.RKeyGitLabUserIDToWebsocketID+strconv.Itoa(client.userId))
 		}
 		delete(wsClients, clientID)
 		mutex.Unlock()
@@ -131,7 +132,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 						ttl = 24 * time.Hour
 					}
 
-					err = redisClient.Set(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(authMsg.UserId), clientID, ttl).Err()
+					err = db.RedisClient.Set(db.Ctx, db.RKeyGitLabUserIDToWebsocketID+strconv.Itoa(authMsg.UserId), clientID, ttl).Err()
 					if err != nil {
 						log.Printf("Ошибка сохранения websocket ID в Redis: %v", err)
 					} else {
@@ -157,7 +158,7 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 // Обновленная функция отправки сообщений - проверяет актуальность соединения
 func sendMessageByID(userId int, message string, WSMessageType string) {
 	// Ищем clientId по userId в Redis
-	clientId, err := redisClient.Get(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(userId)).Result()
+	clientId, err := db.RedisClient.Get(db.Ctx, db.RKeyGitLabUserIDToWebsocketID+strconv.Itoa(userId)).Result()
 	if err != nil {
 		log.Printf("WebSocket ID для пользователя %d не найден в Redis", userId)
 		return
@@ -190,6 +191,6 @@ func sendMessageByID(userId int, message string, WSMessageType string) {
 		mutex.Lock()
 		delete(wsClients, clientId)
 		mutex.Unlock()
-		redisClient.Del(ctx, rKeyGitLabUserIDToWebsocketID+strconv.Itoa(userId))
+		db.RedisClient.Del(db.Ctx, db.RKeyGitLabUserIDToWebsocketID+strconv.Itoa(userId))
 	}
 }

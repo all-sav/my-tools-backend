@@ -3,6 +3,10 @@ package main
 import (
 	"crypto/tls"
 	"log"
+	"mergenator/db"
+	"mergenator/internal/config"
+	"mergenator/internal/service/auth"
+	"mergenator/internal/service/gitlab"
 	"net/http"
 	"time"
 
@@ -13,15 +17,9 @@ var (
 	httpClient = &http.Client{Timeout: 10 * time.Second}
 )
 
-type Repository struct {
-	StandBranch string
-	ProjectId   string
-	AssigneeId  int
-}
-
 func main() {
-	setEnvs()
-	initRedis()
+	config.SetEnvs()
+	db.InitRedis()
 
 	go startHTTPServer()
 
@@ -41,7 +39,7 @@ func startHTTPServer() {
 
 	// Приватные роуты (с авторизацией)
 	authGroup := router.Group("/")
-	authGroup.Use(authMiddleware())
+	authGroup.Use(auth.AuthMiddleware())
 	{
 		authGroup.POST("/merge", handleMerge)
 		authGroup.POST("/auth/logout", handleLogout)

@@ -1,7 +1,9 @@
-package main
+package auth
 
 import (
 	"github.com/gin-gonic/gin"
+	"mergenator/db"
+	"mergenator/internal/service/gitlab"
 	"net/http"
 	"strings"
 )
@@ -14,7 +16,7 @@ const (
 )
 
 // Middleware для проверки токена
-func authMiddleware() gin.HandlerFunc {
+func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Пропускаем запросы к логину
 		if c.Request.URL.Path == "/auth/login" {
@@ -22,7 +24,6 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Получаем заголовок Authorization
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -50,8 +51,8 @@ func authMiddleware() gin.HandlerFunc {
 
 		token := parts[1]
 
-		// Проверяем токен в Redis
-		username, err := getUsernameByToken(token)
+		// Проверяем токен
+		username, err := db.GetUsernameByToken(token)
 		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"success": false,
@@ -63,11 +64,11 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Получаем userID из Redis
-		userID, err := getGitLabUserID(username)
+		// Получаем userID из хранилища
+		userID, err := db.GetGitLabUserID(username)
 		if err != nil {
 			// Если почему-то нет в Redis, пробуем получить из GitLab
-			userID, err = findGitLabUserID(username)
+			userID, err = gitlab.FindGitLabUserID(username)
 			if err != nil {
 				c.JSON(http.StatusUnauthorized, gin.H{
 					"success": false,

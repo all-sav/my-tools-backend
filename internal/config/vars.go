@@ -1,10 +1,33 @@
-package main
+package config
 
 import (
 	"github.com/joho/godotenv"
 	"log"
 	"os"
 )
+
+var Config struct {
+	HttpPort        string
+	WSPort          string
+	WSAllowedOrigin string
+
+	GitlabApiUrl       string
+	GitlabAccessToken  string
+	GitlabWebhookToken string
+
+	BackendProjectID    string
+	FrontendProjectID   string
+	BackendStandBranch  string
+	FrontendStandBranch string
+	CIMainBranch        string
+	RequiredPrefix      string
+	Prefix              string
+	CIPrefix            string
+
+	OverProxy  bool
+	SSLCertPem string
+	SSLKeyPem  string
+}
 
 var (
 	HttpPort        string
@@ -31,7 +54,7 @@ var (
 
 const ()
 
-func setEnvs() {
+func SetEnvs() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal("Ошибка загрузки .env файла:", err)

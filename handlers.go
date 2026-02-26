@@ -3,7 +3,10 @@ package main
 import (
 	"fmt"
 	"log"
+	"mergenator/db"
 	"mergenator/dto"
+	"mergenator/internal/service"
+	"mergenator/middleware"
 	"net/http"
 	"os"
 	"strings"
@@ -31,7 +34,7 @@ type LoginResponse struct {
 }
 
 // Логика для кнопки "Создать MR"
-func createLogicMR(branch string, repo Repository, gitlabUserId int) (error, string) {
+func createLogicMR(branch string, repo service.Repository, gitlabUserId int) (error, string) {
 	sendMessageByID(gitlabUserId, fmt.Sprintf(
 		"Запрос на создание MR ветки `%s` [%s]",
 		branch, getProjectNameByID(repo.ProjectId)), WSMessageTypeHeader)
@@ -44,7 +47,7 @@ func createLogicMR(branch string, repo Repository, gitlabUserId int) (error, str
 
 	// 2. Проверка существования исходной ветки
 	sendMessageByID(gitlabUserId, "Проверка существования исходной ветки", WSMessageTypeDefault)
-	exists, err := branchExistsInRepo(branch, repo.ProjectId)
+	exists, err := service.BranchExistsInRepo(branch, repo.ProjectId)
 	if err != nil {
 		return fmt.Errorf("ошибка проверки ветки: %v", err), ""
 	}
@@ -57,14 +60,14 @@ func createLogicMR(branch string, repo Repository, gitlabUserId int) (error, str
 
 	// 4. Проверка существования CI‑ветки
 	sendMessageByID(gitlabUserId, fmt.Sprintf("Проверяем на существование CI-ветки `%s`", ciBranch), WSMessageTypeDefault)
-	ciExists, err := branchExistsInRepo(ciBranch, repo.ProjectId)
+	ciExists, err := service.BranchExistsInRepo(ciBranch, repo.ProjectId)
 	if err != nil {
 		return fmt.Errorf("Ошибка проверки CI‑ветки: %v", err), ""
 	}
 
 	// 5. Проверка открытого MR для CI‑ветки
 	sendMessageByID(gitlabUserId, "Проверяем есть ли уже открытый MR", WSMessageTypeDefault)
-	hasMR, mrID, mrUrl, err := hasOpenMR(ciBranch, repo.StandBranch, repo.ProjectId)
+	hasMR, mrID, mrUrl, err := service.HasOpenMR(ciBranch, repo.StandBranch, repo.ProjectId)
 	if err != nil {
 		return fmt.Errorf("Ошибка проверки MR для CI‑ветки: %v", err), ""
 	}
@@ -75,19 +78,19 @@ func createLogicMR(branch string, repo Repository, gitlabUserId int) (error, str
 	// 6. Если CI‑ветка существует — удаляем её
 	if ciExists {
 		sendMessageByID(gitlabUserId, fmt.Sprintf("Удаляем старую CI-ветку `%s`", ciBranch), WSMessageTypeDefault)
-		if err := deleteRemoteBranch(ciBranch, repo); err != nil {
+		if err := services.DeleteRemoteBranch(ciBranch, repo); err != nil {
 			return fmt.Errorf("не удалось удалить CI‑ветку %s: %v", ciBranch, err), ""
 		}
 	}
 
 	// 7. Создание CI‑ветки от исходной
 	sendMessageByID(gitlabUserId, fmt.Sprintf("Создаём новую CI-ветку `%s`", ciBranch), WSMessageTypeDefault)
-	if err := createRemoteBranch(branch, ciBranch, repo); err != nil {
+	if err := services.CreateRemoteBranch(branch, ciBranch, repo); err != nil {
 		return fmt.Errorf("не удалось создать CI‑ветку %s: %v", ciBranch, err), ""
 	}
 
 	// 8. Проверка: есть ли уже открытый MR для этих веток?
-	hasMR, mrID, mrUrl, err = hasOpenMR(CIMainBranch, ciBranch, repo.ProjectId)
+	hasMR, mrID, mrUrl, err = services.HasOpenMR(CIMainBranch, ciBranch, repo.ProjectId)
 	if err != nil {
 		return fmt.Errorf("ошибка проверки существующих MR: %v", err), ""
 	}
@@ -96,7 +99,7 @@ func createLogicMR(branch string, repo Repository, gitlabUserId int) (error, str
 		log.Printf("Уже есть открытый MR №%d для %s → %s", mrID, CIMainBranch, ciBranch)
 	} else {
 		// Создаём новый MR
-		mrID, err = mergeBranchInto(CIMainBranch, ciBranch, repo.ProjectId)
+		mrID, err = services.MergeBranchInto(CIMainBranch, ciBranch, repo.ProjectId)
 		if err != nil {
 			return fmt.Errorf("не удалось создать MR: %v", err), ""
 		}
@@ -106,14 +109,14 @@ func createLogicMR(branch string, repo Repository, gitlabUserId int) (error, str
 	}
 
 	// 9. Принятие MR (фактическое слияние)
-	if err := acceptMergeRequest(mrID, repo.ProjectId); err != nil {
+	if err := services.AcceptMergeRequest(mrID, repo.ProjectId); err != nil {
 		return fmt.Errorf("не удалось принять MR %d: %v", mrID, err), ""
 	}
 
 	// 10. Создание MR от CI‑ветки
 	sendMessageByID(gitlabUserId, fmt.Sprintf("Создаём MR от CI-ветки `%s` в ветку стенда `%s`", ciBranch, repo.StandBranch), WSMessageTypeDefault)
 	title := strings.TrimPrefix(ciBranch, Prefix+CIPrefix)
-	mrURL, err := createGitLabMR(ciBranch, title, repo)
+	mrURL, err := services.CreateGitLabMR(ciBranch, title, repo)
 	if err != nil {
 		return err, ""
 	}
@@ -147,7 +150,7 @@ func handleLogin(c *gin.Context) {
 	var gitlabUserID int
 
 	// Проверяем, есть ли уже пользователь в Redis
-	exists, err := userExists(req.GitLabUser)
+	exists, err := db.UserExists(req.GitLabUser)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse("Ошибка проверки пользователя"))
 		return
@@ -155,14 +158,14 @@ func handleLogin(c *gin.Context) {
 
 	if exists {
 		// Если есть, берем ID из Redis
-		gitlabUserID, err = getGitLabUserID(req.GitLabUser)
+		gitlabUserID, err = db.GetGitLabUserID(req.GitLabUser)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, dto.ErrorResponse("Ошибка получения данных пользователя"))
 			return
 		}
 	} else {
 		// Если нет, ищем в GitLab
-		gitlabUserID, err = findGitLabUserID(req.GitLabUser)
+		gitlabUserID, err = services.FindGitLabUserID(req.GitLabUser)
 		if err != nil {
 			c.JSON(http.StatusOK, dto.ErrorResponse("Пользователь GitLab не найден: "+err.Error()))
 			return
@@ -173,7 +176,7 @@ func handleLogin(c *gin.Context) {
 	token := uuid.New().String()
 
 	// Сохраняем сессию в Redis
-	err = storeUserSession(token, req.GitLabUser, gitlabUserID, ttl)
+	err = db.StoreUserSession(token, req.GitLabUser, gitlabUserID, ttl)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, dto.ErrorResponse("Ошибка сохранения сессии"))
 		return
@@ -193,7 +196,7 @@ func handleLogin(c *gin.Context) {
 }
 
 func handleLogout(c *gin.Context) {
-	token, exists := c.Get(AuthToken)
+	token, exists := c.Get(middleware.AuthToken)
 	if !exists {
 		c.JSON(http.StatusOK, dto.SuccessResponse(map[string]string{
 			"message": "Already logged out",
@@ -202,7 +205,7 @@ func handleLogout(c *gin.Context) {
 	}
 
 	// Удаляем сессию из Redis
-	err := deleteUserSession(token.(string))
+	err := db.DeleteUserSession(token.(string))
 	if err != nil {
 		log.Printf("Error deleting user session: %v", err)
 		// Все равно возвращаем успех, так как пользователь все равно выходит
@@ -213,9 +216,8 @@ func handleLogout(c *gin.Context) {
 	}))
 }
 
-// Обновим handleMerge для использования данных из контекста
 func handleMerge(c *gin.Context) {
-	gitlabUserID, exists := c.Get(AuthGitlabUserID)
+	gitlabUserID, exists := c.Get(middleware.AuthGitlabUserID)
 	if !exists {
 		c.JSON(http.StatusUnauthorized, dto.ErrorResponse("Не авторизован"))
 		return
@@ -227,7 +229,7 @@ func handleMerge(c *gin.Context) {
 		return
 	}
 
-	repository := Repository{AssigneeId: gitlabUserID.(int)}
+	repository := services.Repository{AssigneeId: gitlabUserID.(int)}
 
 	if request.Repo == "backend" {
 		repository.StandBranch = BackendStandBranch

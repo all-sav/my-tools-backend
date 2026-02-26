@@ -1,4 +1,4 @@
-package main
+package db
 
 import (
 	"context"
@@ -9,17 +9,17 @@ import (
 )
 
 var (
-	redisClient *redis.Client
-	ctx         = context.Background()
+	RedisClient *redis.Client
+	Ctx         = context.Background()
 )
 
 const (
-	rKeyAuthTokenToGitlabUsername string = "aTokenToGlUsName:"
-	rKeyGitLabUserNameToId        string = "glUsName_ID:"
-	rKeyGitLabUserIDToWebsocketID string = "glUsID_WSID:"
+	RKeyAuthTokenToGitlabUsername string = "aTokenToGlUsName:"
+	RKeyGitLabUserNameToId        string = "glUsName_ID:"
+	RKeyGitLabUserIDToWebsocketID string = "glUsID_WSID:"
 )
 
-func initRedis() {
+func InitRedis() {
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
@@ -28,14 +28,14 @@ func initRedis() {
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 	redisDB := 0 // todo вынести в env
 
-	redisClient = redis.NewClient(&redis.Options{
+	RedisClient = redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: redisPassword,
 		DB:       redisDB,
 	})
 
 	// Проверяем подключение
-	_, err := redisClient.Ping(ctx).Result()
+	_, err := RedisClient.Ping(Ctx).Result()
 	if err != nil {
 		log.Fatalf("Failed to connect to Redis: %v", err)
 	}
@@ -44,15 +44,15 @@ func initRedis() {
 }
 
 // Сохраняем токен и связку username -> userID
-func storeUserSession(token string, gitlabUsername string, gitlabUserID int, ttl time.Duration) error {
+func StoreUserSession(token string, gitlabUsername string, gitlabUserID int, ttl time.Duration) error {
 	// Сохраняем токен -> username для быстрой валидации
-	err := redisClient.Set(ctx, rKeyAuthTokenToGitlabUsername+token, gitlabUsername, ttl).Err()
+	err := RedisClient.Set(Ctx, RKeyAuthTokenToGitlabUsername+token, gitlabUsername, ttl).Err()
 	if err != nil {
 		return err
 	}
 
 	// Сохраняем gitlab_username -> userID для быстрого доступа
-	err = redisClient.Set(ctx, rKeyGitLabUserNameToId+gitlabUsername, gitlabUserID, ttl).Err()
+	err = RedisClient.Set(Ctx, RKeyGitLabUserNameToId+gitlabUsername, gitlabUserID, ttl).Err()
 	if err != nil {
 		return err
 	}
@@ -61,26 +61,26 @@ func storeUserSession(token string, gitlabUsername string, gitlabUserID int, ttl
 }
 
 // Получаем username по токену
-func getUsernameByToken(token string) (string, error) {
-	return redisClient.Get(ctx, rKeyAuthTokenToGitlabUsername+token).Result()
+func GetUsernameByToken(token string) (string, error) {
+	return RedisClient.Get(Ctx, RKeyAuthTokenToGitlabUsername+token).Result()
 }
 
 // Получаем gitlab userID по username
-func getGitLabUserID(username string) (int, error) {
-	val, err := redisClient.Get(ctx, rKeyGitLabUserNameToId+username).Int()
+func GetGitLabUserID(username string) (int, error) {
+	val, err := RedisClient.Get(Ctx, RKeyGitLabUserNameToId+username).Int()
 	return val, err
 }
 
 // Проверяем существует ли пользователь в Redis
-func userExists(username string) (bool, error) {
-	exists, err := redisClient.Exists(ctx, rKeyGitLabUserNameToId+username).Result()
+func UserExists(username string) (bool, error) {
+	exists, err := RedisClient.Exists(Ctx, RKeyGitLabUserNameToId+username).Result()
 	return exists == 1, err
 }
 
 // Удаляем сессию при выходе
-func deleteUserSession(token string) error {
+func DeleteUserSession(token string) error {
 	// Удаляем токен
-	err := redisClient.Del(ctx, rKeyAuthTokenToGitlabUsername+token).Err()
+	err := RedisClient.Del(Ctx, RKeyAuthTokenToGitlabUsername+token).Err()
 	if err != nil {
 		return err
 	}
