@@ -15,6 +15,8 @@ var (
 	GitlabAccessToken  string
 	gitlabWebhookToken string
 
+	BackendProjectID    string
+	FrontendProjectID   string
 	BackendStandBranch  string
 	FrontendStandBranch string
 	CIMainBranch        string
@@ -43,6 +45,8 @@ func setEnvs() {
 	GitlabAccessToken = os.Getenv("GITLAB_ACCESS_TOKEN")
 	gitlabWebhookToken = os.Getenv("GITLAB_WEBHOOK_TOKEN")
 
+	BackendProjectID = os.Getenv("BACKEND_PROJECT_ID")
+	FrontendProjectID = os.Getenv("FRONTEND_PROJECT_ID")
 	BackendStandBranch = os.Getenv("BACKEND_STAND_BRANCH")
 	FrontendStandBranch = os.Getenv("FRONTEND_STAND_BRANCH")
 	CIMainBranch = os.Getenv("CI_MAIN_BRANCH")
