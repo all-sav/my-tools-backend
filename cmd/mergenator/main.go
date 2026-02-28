@@ -10,12 +10,12 @@ import (
 	"mergenator/internal/config"
 	"mergenator/internal/handler/auth"
 	"mergenator/internal/handler/merge"
-	// "mergenator/internal/handler/webhook"
+	"mergenator/internal/handler/webhook"
 	"mergenator/internal/handler/ws"
 	"mergenator/internal/middleware"
 	rd "mergenator/internal/repository/redis"
 	authSvc "mergenator/internal/service/auth"
-	mergeSvc "mergenator/internal/service/merge"
+	gitlabSvc "mergenator/internal/service/gitlab"
 	wsSvc "mergenator/internal/service/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -47,12 +47,12 @@ func main() {
 	// Сервисы
 	wsService := wsSvc.NewWebSocketService([]string{cfg.WSAllowedOrigin}, sessionRepo, cfg.TokenTTL)
 	authService := authSvc.NewAuthService(cfg, sessionRepo, gitlabClient)
-	mergeService := mergeSvc.NewMergeService(cfg, gitlabClient, wsService)
+	gitlabService := gitlabSvc.NewGitlabService(cfg, gitlabClient, wsService)
 
 	// Хендлеры
 	authHandler := auth.NewHandler(authService)
-	mergeHandler := merge.NewHandler(mergeService, wsService)
-	// webhookHandler := webhook.NewHandler(gitlabClient, cfg)
+	mergeHandler := merge.NewHandler(gitlabService, wsService)
+	webhookHandler := webhook.NewHandler(gitlabService, cfg.GitLabWebhookToken)
 	wsHandler := ws.NewHandler(wsService)
 
 	// Роутер
@@ -60,7 +60,7 @@ func main() {
 
 	// Публичные роуты
 	router.POST("/auth/login", authHandler.Login)
-	// router.POST("/webhook/on-push", webhookHandler.Handle)
+	router.POST("/webhook/on-push", webhookHandler.Handle)
 	router.GET("/ws", wsHandler.Handle)
 
 	// Приватные роуты

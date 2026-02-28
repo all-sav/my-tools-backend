@@ -1,10 +1,10 @@
-package merge
+package merge //todo: Перенести в internal/handler/gitlab/merge
 
 import (
 	"mergenator/internal/config"
 	"mergenator/internal/middleware"
 	"mergenator/internal/repository/redis"
-	"mergenator/internal/service/merge"
+	"mergenator/internal/service/gitlab"
 	"mergenator/internal/service/websocket"
 	"mergenator/pkg/dto"
 	"net/http"
@@ -15,7 +15,7 @@ import (
 type Handler struct {
 	cfg         *config.Config
 	sessionRepo redis.SessionRepository
-	mergeSvc    merge.MergeService
+	gitlabSvc   gitlab.GitlabService
 }
 
 type mergeRequest struct {
@@ -23,8 +23,8 @@ type mergeRequest struct {
 	Repo         string `json:"repo"`
 }
 
-func NewHandler(mergeSvc merge.MergeService, wsService websocket.WebSocketService) *Handler {
-	return &Handler{mergeSvc: mergeSvc}
+func NewHandler(mergeSvc gitlab.GitlabService, wsService websocket.WebSocketService) *Handler {
+	return &Handler{gitlabSvc: mergeSvc}
 }
 
 func (h *Handler) Merge(c *gin.Context) {
@@ -41,7 +41,7 @@ func (h *Handler) Merge(c *gin.Context) {
 	}
 
 	// Используем userId для отправки сообщений через WebSocket
-	mrUrl, err := h.mergeSvc.CreateMR(c, request.SourceBranch, request.Repo, gitlabUserID.(int))
+	mrUrl, err := h.gitlabSvc.CreateMR(c, request.SourceBranch, request.Repo, gitlabUserID.(int))
 	if err != nil {
 		c.JSON(200, dto.ErrorResponse(err.Error()))
 		return

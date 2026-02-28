@@ -1,8 +1,9 @@
-package merge
+package gitlab
 
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -18,7 +19,7 @@ type service struct {
 	wsService websocket.WebSocketService
 }
 
-func NewMergeService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService) MergeService {
+func NewGitlabService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService) GitlabService {
 	return &service{
 		cfg:       cfg,
 		gitlabCli: gitlabCli,
@@ -112,6 +113,67 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 
 	s.sendMsg(userID, "MR успешно создан!", "success")
 	return mrURL, nil
+}
+
+func (s *service) HandlePush(ctx context.Context, branch, projectID string) error {
+	// Проверяем префикс ветки
+	if err := utils.ValidateBranchPrefix(branch, s.cfg.RequiredPrefix); err != nil {
+		log.Printf("Branch %s skipped: %v", branch, err)
+		return nil // Не возвращаем ошибку, просто пропускаем
+	}
+
+	ciBranch := utils.MakeCIBranchName(branch, s.cfg.Prefix, s.cfg.CIPrefix)
+
+	// Проверка существования CI-ветки
+	log.Printf("Checking CI branch: %s in project %s", ciBranch, projectID)
+	ciExists, err := s.gitlabCli.BranchExists(ctx, ciBranch, projectID)
+	if err != nil {
+		return fmt.Errorf("error checking CI branch: %v", err)
+	}
+	if !ciExists {
+		log.Println("CI branch not found, skipping")
+		return nil
+	}
+
+	// Получаем stand branch для проекта
+	standBranch := utils.GetStandBranchByProjectID(
+		projectID,
+		s.cfg.BackendStandBranch,
+		s.cfg.FrontendStandBranch,
+	)
+
+	// Проверяем открытый MR для CI‑ветки
+	hasMR, _, _, err := s.gitlabCli.HasOpenMR(ctx, ciBranch, standBranch, projectID)
+	if err != nil {
+		return fmt.Errorf("error checking MR for CI branch: %v", err)
+	}
+	if !hasMR {
+		log.Println("No open MR found for CI branch")
+		return nil
+	}
+
+	// Мержим исходную ветку в CI-ветку
+	hasMR, mrID, _, err := s.gitlabCli.HasOpenMR(ctx, branch, ciBranch, projectID)
+	if err != nil {
+		return fmt.Errorf("error checking existing MR: %v", err)
+	}
+
+	if !hasMR {
+		mrID, err = s.gitlabCli.MergeBranchInto(ctx, branch, ciBranch, projectID)
+		if err != nil {
+			return fmt.Errorf("failed to create MR: %v", err)
+		}
+		log.Printf("Created MR #%d, waiting...", mrID)
+		time.Sleep(3 * time.Second)
+	}
+
+	// Принимаем MR
+	if err := s.gitlabCli.AcceptMR(ctx, mrID, projectID); err != nil {
+		return fmt.Errorf("failed to accept MR %d: %v", mrID, err)
+	}
+
+	log.Printf("Successfully merged %s into %s", branch, ciBranch)
+	return nil
 }
 
 func (s *service) sendMsg(userID int, msg, msgType string) {
