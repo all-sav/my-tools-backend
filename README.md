@@ -13,7 +13,7 @@ Back: go
 
 > - Сейчас ведётяс активный рефакторинг бэкенда, разделение логики по разным пакетам и многое другое
 
-![Дашборд](dashboard.png)
+![Дашборд](docs/dashboard.png)
 
 ### Мерженатор
 
@@ -26,9 +26,9 @@ Back: go
 В гитлабе также можно настроить вебхук на адрес https://this-app-url/webhook/on-push чтобы он срабатывал на push в репозиторий.
 Данное приложение отработает событие, автоматом подмержит изменения в ветку с дополнениями(созданную при создании MR). 
 
-![Мерженатор](mergenator.png)
+![Мерженатор](docs/mergenator.png)
 
-#### Конфиг nginx для прокси
+#### Конфиг nginx
 ```
 server {
     listen 443 ssl;
@@ -40,32 +40,28 @@ server {
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
 
+    # Запрет индексации поисковиками
     add_header X-Robots-Tag "noindex, nofollow, nosnippet, noarchive" always;
 
-    location / {
+    # Апишка бэкенда
+    location /api {
         proxy_pass http://localhost:8085;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
     }
-}
 
-# Веб-сокет
-server {
-    listen 8076 ssl;
-    server_name my-domain.com;
-
-    ssl_certificate /path-to-certs/fullchain.pem;
-    ssl_certificate_key /path-to-certs/privkey.pem;
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-
+    # Websockets
     location /ws {
-        proxy_pass http://localhost:8086;
+        proxy_pass http://localhost:8085;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+    }
+
+    # Todo: Фронтенд
+    location / {
+        
     }
 }
 ```
