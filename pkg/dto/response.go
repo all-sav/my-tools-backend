@@ -2,8 +2,8 @@ package dto
 
 type (
 	Response struct {
-		Success bool        `json:"success"`
-		Data    interface{} `json:"data"`
+		Success bool `json:"success"`
+		Data    any  `json:"data"`
 	}
 
 	ErrorData struct {
@@ -17,7 +17,7 @@ type (
 	}
 )
 
-func SuccessResponse(data interface{}) Response {
+func SuccessResponse(data any) Response {
 	return Response{
 		Success: true,
 		Data:    data,

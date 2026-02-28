@@ -1,0 +1,52 @@
+package merge
+
+import (
+	"mergenator/internal/config"
+	"mergenator/internal/middleware"
+	"mergenator/internal/repository/redis"
+	"mergenator/internal/service/merge"
+	"mergenator/internal/service/websocket"
+	"mergenator/pkg/dto"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Handler struct {
+	cfg         *config.Config
+	sessionRepo redis.SessionRepository
+	mergeSvc    merge.MergeService
+}
+
+type mergeRequest struct {
+	SourceBranch string `json:"source_branch"`
+	Repo         string `json:"repo"`
+}
+
+func NewHandler(mergeSvc merge.MergeService, wsService websocket.WebSocketService) *Handler {
+	return &Handler{mergeSvc: mergeSvc}
+}
+
+func (h *Handler) Merge(c *gin.Context) {
+	gitlabUserID, exists := c.Get(middleware.AuthGitlabUserID)
+	if !exists {
+		c.JSON(http.StatusUnauthorized, dto.ErrorResponse("Не авторизован"))
+		return
+	}
+
+	var request mergeRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.String(http.StatusBadRequest, "Ошибка парсинга JSON: "+err.Error())
+		return
+	}
+
+	// Используем userId для отправки сообщений через WebSocket
+	mrUrl, err := h.mergeSvc.CreateMR(c, request.SourceBranch, request.Repo, gitlabUserID.(int))
+	if err != nil {
+		c.JSON(200, dto.ErrorResponse(err.Error()))
+		return
+	}
+
+	resp := dto.SuccessResponse(map[string]string{"mrUrl": mrUrl})
+	c.JSON(200, resp)
+}

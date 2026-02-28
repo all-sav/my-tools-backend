@@ -1,0 +1,93 @@
+package main
+
+import (
+	"context"
+	"crypto/tls"
+	"log"
+	"net/http"
+
+	"mergenator/internal/client/gitlab"
+	"mergenator/internal/config"
+	"mergenator/internal/handler/auth"
+	"mergenator/internal/handler/merge"
+	// "mergenator/internal/handler/webhook"
+	"mergenator/internal/handler/ws"
+	"mergenator/internal/middleware"
+	rd "mergenator/internal/repository/redis"
+	authSvc "mergenator/internal/service/auth"
+	mergeSvc "mergenator/internal/service/merge"
+	wsSvc "mergenator/internal/service/websocket"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-redis/redis/v8"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal("Failed to load config:", err)
+	}
+
+	// Redis клиент
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     cfg.RedisAddr,
+		Password: cfg.RedisPassword,
+		DB:       cfg.RedisDB,
+	})
+	if err := rdb.Ping(context.Background()).Err(); err != nil {
+		log.Fatal("Redis connection failed:", err)
+	}
+
+	// GitLab клиент
+	gitlabClient := gitlab.NewClient(cfg.GitLabAPIURL, cfg.GitLabAccessToken)
+
+	// Репозитории
+	sessionRepo := rd.NewSessionRepository(rdb)
+
+	// Сервисы
+	wsService := wsSvc.NewWebSocketService([]string{cfg.WSAllowedOrigin}, sessionRepo, cfg.TokenTTL)
+	authService := authSvc.NewAuthService(cfg, sessionRepo, gitlabClient)
+	mergeService := mergeSvc.NewMergeService(cfg, gitlabClient, wsService)
+
+	// Хендлеры
+	authHandler := auth.NewHandler(authService)
+	mergeHandler := merge.NewHandler(mergeService, wsService)
+	// webhookHandler := webhook.NewHandler(gitlabClient, cfg)
+	wsHandler := ws.NewHandler(wsService)
+
+	// Роутер
+	router := gin.Default()
+
+	// Публичные роуты
+	router.POST("/auth/login", authHandler.Login)
+	// router.POST("/webhook/on-push", webhookHandler.Handle)
+	router.GET("/ws", wsHandler.Handle)
+
+	// Приватные роуты
+	authGroup := router.Group("/")
+	authGroup.Use(middleware.AuthMiddleware(authService))
+	{
+		authGroup.POST("/merge", mergeHandler.Merge)
+		authGroup.POST("/auth/logout", authHandler.Logout)
+	}
+
+	startServer(router, cfg)
+}
+
+func startServer(router *gin.Engine, cfg *config.Config) {
+	if cfg.OverProxy {
+		if err := router.Run("localhost:" + cfg.HTTPPort); err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		server := &http.Server{
+			Addr:      "localhost:" + cfg.HTTPPort,
+			Handler:   router,
+			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+		}
+		log.Printf("HTTPS server running on https://localhost:%s", cfg.HTTPPort)
+		if err := server.ListenAndServeTLS(cfg.SSLCertPem, cfg.SSLKeyPem); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}
+}
