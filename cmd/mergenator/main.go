@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"log"
 	"net/http"
 
@@ -12,6 +13,7 @@ import (
 	"mergenator/internal/handler/merge"
 	"mergenator/internal/handler/webhook"
 	"mergenator/internal/handler/ws"
+	"mergenator/internal/infr/logger"
 	"mergenator/internal/middleware"
 	rd "mergenator/internal/repository/redis"
 	authSvc "mergenator/internal/service/auth"
@@ -28,6 +30,15 @@ func main() {
 		log.Fatal("Failed to load config:", err)
 	}
 
+	// логгер
+	logCloser, err := logger.Init(cfg)
+	if err != nil {
+		log.Fatal("Failed to init logger:", err)
+	}
+
+	log := logger.Get()
+	log.Info().Msg("Starting MyTools application")
+
 	// Redis клиент
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     cfg.RedisAddr,
@@ -35,8 +46,9 @@ func main() {
 		DB:       cfg.RedisDB,
 	})
 	if err := rdb.Ping(context.Background()).Err(); err != nil {
-		log.Fatal("Redis connection failed:", err)
+		log.Fatal().Err(err).Msg("Redis connection failed")
 	}
+	log.Info().Msg("Connected to Redis")
 
 	// GitLab клиент
 	gitlabClient := gitlab.NewClient(cfg.GitLabAPIURL, cfg.GitLabAccessToken)
@@ -57,6 +69,7 @@ func main() {
 
 	// Роутер
 	router := gin.Default()
+	router.Use(middleware.LoggerMiddleware(log))
 
 	// Публичные роуты
 	router.POST("/auth/login", authHandler.Login)
@@ -72,12 +85,15 @@ func main() {
 	}
 
 	startServer(router, cfg)
+
+	defer logCloser.Close()
 }
 
 func startServer(router *gin.Engine, cfg *config.Config) {
+	log := logger.Get()
 	if cfg.OverProxy {
 		if err := router.Run("localhost:" + cfg.HTTPPort); err != nil {
-			log.Fatal(err)
+			log.Fatal().Err(err)
 		}
 	} else {
 		server := &http.Server{
@@ -85,9 +101,9 @@ func startServer(router *gin.Engine, cfg *config.Config) {
 			Handler:   router,
 			TLSConfig: &tls.Config{MinVersion: tls.VersionTLS12},
 		}
-		log.Printf("HTTPS server running on https://localhost:%s", cfg.HTTPPort)
+		log.Info().Msg(fmt.Sprintf("HTTPS server running on https://localhost:%s", cfg.HTTPPort))
 		if err := server.ListenAndServeTLS(cfg.SSLCertPem, cfg.SSLKeyPem); err != nil && err != http.ErrServerClosed {
-			log.Fatal(err)
+			log.Fatal().Err(err)
 		}
 	}
 }

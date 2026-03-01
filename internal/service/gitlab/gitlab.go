@@ -9,14 +9,18 @@ import (
 
 	"mergenator/internal/client/gitlab"
 	"mergenator/internal/config"
+	"mergenator/internal/infr/logger"
 	"mergenator/internal/service/websocket"
 	"mergenator/internal/utils"
+
+	"github.com/rs/zerolog"
 )
 
 type service struct {
 	cfg       *config.Config
 	gitlabCli gitlab.GitLabClient
 	wsService websocket.WebSocketService
+	log       *zerolog.Logger
 }
 
 func NewGitlabService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService) GitlabService {
@@ -24,10 +28,17 @@ func NewGitlabService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsServi
 		cfg:       cfg,
 		gitlabCli: gitlabCli,
 		wsService: wsService,
+		log:       logger.Get(),
 	}
 }
 
 func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, userID int) (string, error) {
+	log := s.log.With().
+		Str("branch", sourceBranch).
+		Str("repo", repoType).
+		Int("user_id", userID).
+		Logger()
+
 	// Определяем параметры репозитория
 	var repo gitlab.Repository
 	if repoType == "backend" {
@@ -97,7 +108,7 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 		if err != nil {
 			return "", fmt.Errorf("не удалось создать MR: %v", err)
 		}
-		time.Sleep(3 * time.Second)
+		time.Sleep(6 * time.Second)
 	}
 
 	if err := s.gitlabCli.AcceptMR(ctx, mrID, repo.ProjectID); err != nil {
@@ -112,6 +123,7 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 	}
 
 	s.sendMsg(userID, "MR успешно создан!", "success")
+	log.Info().Int("mr_id", mrID).Msg("MR успешно создан")
 	return mrURL, nil
 }
 
@@ -164,7 +176,7 @@ func (s *service) HandlePush(ctx context.Context, branch, projectID string) erro
 			return fmt.Errorf("failed to create MR: %v", err)
 		}
 		log.Printf("Created MR #%d, waiting...", mrID)
-		time.Sleep(3 * time.Second)
+		time.Sleep(6 * time.Second)
 	}
 
 	// Принимаем MR

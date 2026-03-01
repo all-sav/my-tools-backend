@@ -19,11 +19,6 @@ const (
 
 func AuthMiddleware(authSvc auth.AuthService) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.URL.Path == "/auth/login" {
-			c.Next()
-			return
-		}
-
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, dto.ErrorResponse("Отсутствует токен авторизации"))

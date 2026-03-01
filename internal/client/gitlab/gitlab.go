@@ -6,15 +6,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mergenator/internal/infr/logger"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/rs/zerolog"
 )
 
 type client struct {
 	apiURL     string
 	token      string
 	httpClient *http.Client
+	log        *zerolog.Logger
 }
 
 type GitLabUser struct {
@@ -29,6 +33,7 @@ func NewClient(apiURL, token string) GitLabClient {
 		apiURL:     apiURL,
 		token:      token,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
+		log:        logger.Get(),
 	}
 }
 

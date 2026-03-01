@@ -1,13 +1,16 @@
 package webhook //todo: Перенести в internal/handler/gitlab/webhook
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
+	"mergenator/internal/infr/logger"
 	"mergenator/internal/service/gitlab"
 	"mergenator/pkg/dto"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 )
 
 type GitLabWebhook struct {
@@ -22,12 +25,14 @@ type GitLabWebhook struct {
 type Handler struct {
 	gitlabService gitlab.GitlabService
 	webhookToken  string
+	log           *zerolog.Logger
 }
 
 func NewHandler(service gitlab.GitlabService, webhookToken string) *Handler {
 	return &Handler{
 		gitlabService: service,
 		webhookToken:  webhookToken,
+		log:           logger.Get(),
 	}
 }
 
@@ -36,6 +41,7 @@ func (h *Handler) Handle(c *gin.Context) {
 	token := c.GetHeader("X-Gitlab-Token")
 	if token != h.webhookToken {
 		c.JSON(http.StatusUnauthorized, dto.ErrorResponse("Invalid token"))
+		h.log.Err(fmt.Errorf("invalid webhook token")).Str("token", token)
 		return
 	}
 
@@ -58,7 +64,7 @@ func (h *Handler) Handle(c *gin.Context) {
 	// Вызываем сервис для обработки push
 	if err := h.gitlabService.HandlePush(c.Request.Context(), branch, string(projectID)); err != nil {
 		// Логируем ошибку, но клиенту возвращаем 200, чтобы GitLab не паниковал
-		c.Error(err) // gin сохранит ошибку в контексте
+		h.log.Err(err).Msg("Webhook error")
 	}
 
 	c.Status(http.StatusOK)

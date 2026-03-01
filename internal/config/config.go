@@ -3,6 +3,7 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -34,6 +35,15 @@ type Config struct {
 	AuthUsername string
 	AuthPassword string
 	TokenTTL     time.Duration
+
+	LogFile       string
+	LogLevel      string
+	LogMaxSize    int
+	LogMaxBackups int
+	LogMaxAge     int
+	LogCompress   bool
+	LogConsole    bool
+	LogJSON       bool
 }
 
 func Load() (*Config, error) {
@@ -45,6 +55,14 @@ func Load() (*Config, error) {
 	if ttl == 0 {
 		ttl = 24 * time.Hour
 	}
+
+	// Парсим настройки логов
+	maxSize, _ := strconv.Atoi(getEnv("LOG_MAX_SIZE", "100"))
+	maxBackups, _ := strconv.Atoi(getEnv("LOG_MAX_BACKUPS", "3"))
+	maxAge, _ := strconv.Atoi(getEnv("LOG_MAX_AGE", "28"))
+	compress := getEnv("LOG_COMPRESS", "true") == "true"
+	console := getEnv("LOG_CONSOLE", "true") == "true"
+	jsonLog := getEnv("LOG_JSON", "false") == "true"
 
 	return &Config{
 		HTTPPort:            getEnv("HTTP_PORT", "8080"),
@@ -70,6 +88,14 @@ func Load() (*Config, error) {
 		RedisDB:             0, // todo: вынести в env
 		AuthUsername:        getEnv("AUTH_USERNAME", ""),
 		AuthPassword:        getEnv("AUTH_PASSWORD", ""),
+		LogFile:             getEnv("LOG_FILE", "./logs/mergenator.log"),
+		LogLevel:            getEnv("LOG_LEVEL", "info"),
+		LogMaxSize:          maxSize,
+		LogMaxBackups:       maxBackups,
+		LogMaxAge:           maxAge,
+		LogCompress:         compress,
+		LogConsole:          console,
+		LogJSON:             jsonLog,
 	}, nil
 }
 

@@ -2,6 +2,7 @@ package merge //todo: Перенести в internal/handler/gitlab/merge
 
 import (
 	"mergenator/internal/config"
+	"mergenator/internal/infr/logger"
 	"mergenator/internal/middleware"
 	"mergenator/internal/repository/redis"
 	"mergenator/internal/service/gitlab"
@@ -10,12 +11,14 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 )
 
 type Handler struct {
 	cfg         *config.Config
 	sessionRepo redis.SessionRepository
 	gitlabSvc   gitlab.GitlabService
+	log         *zerolog.Logger
 }
 
 type mergeRequest struct {
@@ -24,7 +27,10 @@ type mergeRequest struct {
 }
 
 func NewHandler(mergeSvc gitlab.GitlabService, wsService websocket.WebSocketService) *Handler {
-	return &Handler{gitlabSvc: mergeSvc}
+	return &Handler{
+		gitlabSvc: mergeSvc,
+		log:       logger.Get(),
+	}
 }
 
 func (h *Handler) Merge(c *gin.Context) {
@@ -44,6 +50,7 @@ func (h *Handler) Merge(c *gin.Context) {
 	mrUrl, err := h.gitlabSvc.CreateMR(c, request.SourceBranch, request.Repo, gitlabUserID.(int))
 	if err != nil {
 		c.JSON(200, dto.ErrorResponse(err.Error()))
+		h.log.Err(err).Int("user_id", gitlabUserID.(int)).Msg("MR create error")
 		return
 	}
 

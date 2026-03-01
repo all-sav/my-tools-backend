@@ -16,3 +16,4 @@ Thumbs.db
 .env
 *.pem
 __debug*
+logs/*
