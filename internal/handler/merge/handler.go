@@ -46,7 +46,6 @@ func (h *Handler) Merge(c *gin.Context) {
 		return
 	}
 
-	// Используем userId для отправки сообщений через WebSocket
 	mrUrl, err := h.gitlabSvc.CreateMR(c, request.SourceBranch, request.Repo, gitlabUserID.(int))
 	if err != nil {
 		c.JSON(200, dto.ErrorResponse(err.Error()))

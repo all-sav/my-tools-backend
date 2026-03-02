@@ -10,6 +10,7 @@ import (
 	"mergenator/internal/client/gitlab"
 	"mergenator/internal/config"
 	"mergenator/internal/infr/logger"
+	settingsrepo "mergenator/internal/repository/settings"
 	"mergenator/internal/service/websocket"
 	"mergenator/internal/utils"
 
@@ -17,18 +18,32 @@ import (
 )
 
 type service struct {
-	cfg       *config.Config
-	gitlabCli gitlab.GitLabClient
-	wsService websocket.WebSocketService
-	log       *zerolog.Logger
+	cfg          *config.Config
+	gitlabCli    gitlab.GitLabClient
+	wsService    websocket.WebSocketService
+	settingsRepo settingsrepo.SettingsRepository
+	log          *zerolog.Logger
 }
 
-func NewGitlabService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService) GitlabService {
+type MergenatorSettings struct {
+	BackendProjectID    string `json:"backend_project_id"`
+	FrontendProjectID   string `json:"frontend_project_id"`
+	BackendStandBranch  string `json:"backend_stand_branch"`
+	FrontendStandBranch string `json:"frontend_stand_branch"`
+	CIMainBranch        string `json:"ci_main_branch"`
+	RequiredPrefix      string `json:"required_prefix"`
+	Prefix              string `json:"prefix"`
+	CIPrefix            string `json:"ci_prefix"`
+	UpdatedAt           int64  `json:"updated_at"`
+}
+
+func NewGitlabService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService, settingsRepo settingsrepo.SettingsRepository) GitlabService {
 	return &service{
-		cfg:       cfg,
-		gitlabCli: gitlabCli,
-		wsService: wsService,
-		log:       logger.Get(),
+		cfg:          cfg,
+		gitlabCli:    gitlabCli,
+		wsService:    wsService,
+		settingsRepo: settingsRepo,
+		log:          logger.Get(),
 	}
 }
 
@@ -38,6 +53,11 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 		Str("repo", repoType).
 		Int("user_id", userID).
 		Logger()
+
+	// data, err := s.settingsRepo.Get("mergenator")
+
+	// var settings MergenatorSettings
+	// todo - маппить полученные настройки - из data в MergenatorSettings. И может хранить в памяти чтобы в следующий раз не лазить в репозиторий? а надо ли?
 
 	// Определяем параметры репозитория
 	var repo gitlab.Repository

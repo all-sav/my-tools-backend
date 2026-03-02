@@ -16,6 +16,7 @@ import (
 	"mergenator/internal/infr/logger"
 	"mergenator/internal/middleware"
 	rd "mergenator/internal/repository/redis"
+	"mergenator/internal/repository/settings/dbrepo"
 	authSvc "mergenator/internal/service/auth"
 	gitlabSvc "mergenator/internal/service/gitlab"
 	wsSvc "mergenator/internal/service/websocket"
@@ -55,11 +56,15 @@ func main() {
 
 	// Репозитории
 	sessionRepo := rd.NewSessionRepository(rdb)
+	settingsRepo, err := dbrepo.NewSettingsDBRepository()
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to get settings")
+	}
 
 	// Сервисы
 	wsService := wsSvc.NewWebSocketService([]string{cfg.WSAllowedOrigin}, sessionRepo, cfg.TokenTTL)
 	authService := authSvc.NewAuthService(cfg, sessionRepo, gitlabClient)
-	gitlabService := gitlabSvc.NewGitlabService(cfg, gitlabClient, wsService)
+	gitlabService := gitlabSvc.NewGitlabService(cfg, gitlabClient, wsService, settingsRepo)
 
 	// Хендлеры
 	authHandler := auth.NewHandler(authService)
