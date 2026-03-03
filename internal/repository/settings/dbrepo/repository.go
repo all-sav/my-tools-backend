@@ -89,7 +89,7 @@ func (r *settingsDBRepository) Get(dataKey string) (any, error) {
 
 		data := bucket.Get([]byte(dataKey))
 		if data == nil {
-			// todo: что-то придумать если настройки не найдены
+			// todo: что-то придумать если настройки не найдены?
 			return nil
 		}
 

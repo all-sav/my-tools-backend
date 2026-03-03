@@ -10,20 +10,14 @@ import (
 )
 
 type Config struct {
-	HTTPPort            string
-	WSPort              string
-	WSAllowedOrigin     string
-	GitLabAPIURL        string
-	GitLabAccessToken   string
-	GitLabWebhookToken  string
-	BackendProjectID    string
-	FrontendProjectID   string
-	BackendStandBranch  string
-	FrontendStandBranch string
-	CIMainBranch        string
-	RequiredPrefix      string
-	Prefix              string
-	CIPrefix            string
+	HTTPPort           string
+	WSPort             string
+	WSAllowedOrigin    string
+
+	GitLabAPIURL       string
+	GitLabAccessToken  string
+	GitLabWebhookToken string
+
 	OverProxy           bool
 	SSLCertPem          string
 	SSLKeyPem           string
@@ -68,26 +62,23 @@ func Load() (*Config, error) {
 		HTTPPort:            getEnv("HTTP_PORT", "8080"),
 		WSPort:              getEnv("WS_PORT", "8086"),
 		WSAllowedOrigin:     getEnv("APP_URL", ""),
+		
 		GitLabAPIURL:        getEnv("GITLAB_API_URL", ""),
 		GitLabAccessToken:   getEnv("GITLAB_ACCESS_TOKEN", ""),
 		GitLabWebhookToken:  getEnv("GITLAB_WEBHOOK_TOKEN", ""),
-		BackendProjectID:    getEnv("BACKEND_PROJECT_ID", ""),
-		FrontendProjectID:   getEnv("FRONTEND_PROJECT_ID", ""),
-		BackendStandBranch:  getEnv("BACKEND_STAND_BRANCH", ""),
-		FrontendStandBranch: getEnv("FRONTEND_STAND_BRANCH", ""),
-		CIMainBranch:        getEnv("CI_MAIN_BRANCH", ""),
-		RequiredPrefix:      getEnv("REQUIRED_PREFIX", ""),
-		Prefix:              getEnv("PREFIX", ""),
-		CIPrefix:            getEnv("CI_PREFIX", ""),
+
 		OverProxy:           os.Getenv("OVER_PROXY") == "true",
 		SSLCertPem:          getEnv("SSL_CERT_PEM", ""),
 		SSLKeyPem:           getEnv("SSL_KEY_PEM", ""),
-		TokenTTL:            ttl,
+
 		RedisAddr:           getEnv("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:       os.Getenv("REDIS_PASSWORD"),
 		RedisDB:             0, // todo: вынести в env
+
 		AuthUsername:        getEnv("AUTH_USERNAME", ""),
 		AuthPassword:        getEnv("AUTH_PASSWORD", ""),
+		TokenTTL:            ttl,
+
 		LogFile:             getEnv("LOG_FILE", "./logs/mergenator.log"),
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		LogMaxSize:          maxSize,

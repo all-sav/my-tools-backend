@@ -19,6 +19,7 @@ import (
 	"mergenator/internal/repository/settings/dbrepo"
 	authSvc "mergenator/internal/service/auth"
 	gitlabSvc "mergenator/internal/service/gitlab"
+	settingsSvc "mergenator/internal/service/settings"
 	wsSvc "mergenator/internal/service/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -64,7 +65,8 @@ func main() {
 	// Сервисы
 	wsService := wsSvc.NewWebSocketService([]string{cfg.WSAllowedOrigin}, sessionRepo, cfg.TokenTTL)
 	authService := authSvc.NewAuthService(cfg, sessionRepo, gitlabClient)
-	gitlabService := gitlabSvc.NewGitlabService(cfg, gitlabClient, wsService, settingsRepo)
+	settingsService := settingsSvc.NewSettingsService(settingsRepo)
+	gitlabService := gitlabSvc.NewGitlabService(gitlabClient, wsService, settingsService)
 
 	// Хендлеры
 	authHandler := auth.NewHandler(authService)

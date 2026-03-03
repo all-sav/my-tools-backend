@@ -2,15 +2,15 @@ package gitlab
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"mergenator/internal/client/gitlab"
-	"mergenator/internal/config"
 	"mergenator/internal/infr/logger"
-	settingsrepo "mergenator/internal/repository/settings"
+	"mergenator/internal/service/settings"
 	"mergenator/internal/service/websocket"
 	"mergenator/internal/utils"
 
@@ -18,11 +18,10 @@ import (
 )
 
 type service struct {
-	cfg          *config.Config
-	gitlabCli    gitlab.GitLabClient
-	wsService    websocket.WebSocketService
-	settingsRepo settingsrepo.SettingsRepository
-	log          *zerolog.Logger
+	gitlabCli       gitlab.GitLabClient
+	wsService       websocket.WebSocketService
+	settingsService settings.SettingsService
+	log             *zerolog.Logger
 }
 
 type MergenatorSettings struct {
@@ -37,13 +36,12 @@ type MergenatorSettings struct {
 	UpdatedAt           int64  `json:"updated_at"`
 }
 
-func NewGitlabService(cfg *config.Config, gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService, settingsRepo settingsrepo.SettingsRepository) GitlabService {
+func NewGitlabService(gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService, settingsService settings.SettingsService) GitlabService {
 	return &service{
-		cfg:          cfg,
-		gitlabCli:    gitlabCli,
-		wsService:    wsService,
-		settingsRepo: settingsRepo,
-		log:          logger.Get(),
+		gitlabCli:       gitlabCli,
+		wsService:       wsService,
+		settingsService: settingsService,
+		log:             logger.Get(),
 	}
 }
 
@@ -54,30 +52,30 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 		Int("user_id", userID).
 		Logger()
 
-	// data, err := s.settingsRepo.Get("mergenator")
-
-	// var settings MergenatorSettings
-	// todo - маппить полученные настройки - из data в MergenatorSettings. И может хранить в памяти чтобы в следующий раз не лазить в репозиторий? а надо ли?
+	settings, err := s.getMergenatorSettings()
+	if err != nil {
+		return "", err
+	}
 
 	// Определяем параметры репозитория
 	var repo gitlab.Repository
 	if repoType == "backend" {
 		repo = gitlab.Repository{
-			StandBranch: s.cfg.BackendStandBranch,
-			ProjectID:   s.cfg.BackendProjectID,
-			AssigneeID:  userID,
+			StandBranch: settings.BackendStandBranch,
+			ProjectID:   settings.BackendProjectID,
 		}
 	} else {
 		repo = gitlab.Repository{
-			StandBranch: s.cfg.FrontendStandBranch,
-			ProjectID:   s.cfg.FrontendProjectID,
-			AssigneeID:  userID,
+			StandBranch: settings.FrontendStandBranch,
+			ProjectID:   settings.FrontendProjectID,
 		}
 	}
 
+	repo.AssigneeID = userID
+
 	s.sendMsg(userID, fmt.Sprintf("Запрос на создание MR ветки `%s` [%s]", sourceBranch, repoType), "header")
 	s.sendMsg(userID, "Проверка префикса исходной ветки", "default")
-	if err := utils.ValidateBranchPrefix(sourceBranch, s.cfg.RequiredPrefix); err != nil {
+	if err := utils.ValidateBranchPrefix(sourceBranch, settings.RequiredPrefix); err != nil {
 		return "", err
 	}
 
@@ -90,7 +88,7 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 		return "", fmt.Errorf("ветка %s не найдена", sourceBranch)
 	}
 
-	ciBranch := utils.MakeCIBranchName(sourceBranch, s.cfg.Prefix, s.cfg.CIPrefix)
+	ciBranch := utils.MakeCIBranchName(sourceBranch, settings.RequiredPrefix, settings.CIPrefix)
 
 	s.sendMsg(userID, fmt.Sprintf("Проверяем на существование CI-ветки `%s`", ciBranch), "default")
 	ciExists, err := s.gitlabCli.BranchExists(ctx, ciBranch, repo.ProjectID)
@@ -119,12 +117,12 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 		return "", fmt.Errorf("не удалось создать CI‑ветку %s: %v", ciBranch, err)
 	}
 
-	hasMR, mrID, _, err := s.gitlabCli.HasOpenMR(ctx, s.cfg.CIMainBranch, ciBranch, repo.ProjectID)
+	hasMR, mrID, _, err := s.gitlabCli.HasOpenMR(ctx, settings.CIMainBranch, ciBranch, repo.ProjectID)
 	if err != nil {
 		return "", fmt.Errorf("ошибка проверки существующих MR: %v", err)
 	}
 	if !hasMR {
-		mrID, err = s.gitlabCli.MergeBranchInto(ctx, s.cfg.CIMainBranch, ciBranch, repo.ProjectID)
+		mrID, err = s.gitlabCli.MergeBranchInto(ctx, settings.CIMainBranch, ciBranch, repo.ProjectID)
 		if err != nil {
 			return "", fmt.Errorf("не удалось создать MR: %v", err)
 		}
@@ -136,7 +134,7 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 	}
 
 	s.sendMsg(userID, fmt.Sprintf("Создаём MR от CI-ветки `%s` в ветку стенда `%s`", ciBranch, repo.StandBranch), "default")
-	title := strings.TrimPrefix(ciBranch, s.cfg.Prefix+s.cfg.CIPrefix)
+	title := strings.TrimPrefix(ciBranch, settings.Prefix+settings.CIPrefix)
 	mrURL, err = s.gitlabCli.CreateMR(ctx, ciBranch, title, repo)
 	if err != nil {
 		return "", err
@@ -147,14 +145,20 @@ func (s *service) CreateMR(ctx context.Context, sourceBranch, repoType string, u
 	return mrURL, nil
 }
 
+// todo: отправлять по вебсокету инфу о ходе вебхука
 func (s *service) HandlePush(ctx context.Context, branch, projectID string) error {
+	settings, err := s.getMergenatorSettings()
+	if err != nil {
+		return err
+	}
+
 	// Проверяем префикс ветки
-	if err := utils.ValidateBranchPrefix(branch, s.cfg.RequiredPrefix); err != nil {
+	if err := utils.ValidateBranchPrefix(branch, settings.RequiredPrefix); err != nil {
 		log.Printf("Branch %s skipped: %v", branch, err)
 		return nil // Не возвращаем ошибку, просто пропускаем
 	}
 
-	ciBranch := utils.MakeCIBranchName(branch, s.cfg.Prefix, s.cfg.CIPrefix)
+	ciBranch := utils.MakeCIBranchName(branch, settings.Prefix, settings.CIPrefix)
 
 	// Проверка существования CI-ветки
 	log.Printf("Checking CI branch: %s in project %s", ciBranch, projectID)
@@ -163,15 +167,15 @@ func (s *service) HandlePush(ctx context.Context, branch, projectID string) erro
 		return fmt.Errorf("error checking CI branch: %v", err)
 	}
 	if !ciExists {
-		log.Println("CI branch not found, skipping")
+		// log.Println("CI branch not found, skipping")
 		return nil
 	}
 
 	// Получаем stand branch для проекта
 	standBranch := utils.GetStandBranchByProjectID(
 		projectID,
-		s.cfg.BackendStandBranch,
-		s.cfg.FrontendStandBranch,
+		settings.BackendStandBranch,
+		settings.FrontendStandBranch,
 	)
 
 	// Проверяем открытый MR для CI‑ветки
@@ -180,7 +184,7 @@ func (s *service) HandlePush(ctx context.Context, branch, projectID string) erro
 		return fmt.Errorf("error checking MR for CI branch: %v", err)
 	}
 	if !hasMR {
-		log.Println("No open MR found for CI branch")
+		// log.Println("No open MR found for CI branch")
 		return nil
 	}
 
@@ -204,10 +208,32 @@ func (s *service) HandlePush(ctx context.Context, branch, projectID string) erro
 		return fmt.Errorf("failed to accept MR %d: %v", mrID, err)
 	}
 
-	log.Printf("Successfully merged %s into %s", branch, ciBranch)
+	s.log.Info().Msg(fmt.Sprintf("Webhook passed - MR#%d updated by branch `%s`", mrID, branch))
 	return nil
 }
 
 func (s *service) sendMsg(userID int, msg, msgType string) {
 	_ = s.wsService.SendMessageToUser(context.Background(), userID, msg, msgType)
+}
+
+func (s *service) getMergenatorSettings() (MergenatorSettings, error) {
+	var settings MergenatorSettings
+
+	settingsData, err := s.settingsService.Get("mergenator")
+	if err != nil {
+		return settings, fmt.Errorf("failed to get settings data: %w", err)
+	}
+	if settingsData != nil {
+		return settings, fmt.Errorf("mergenator settings is empty")
+	}
+
+	jsonData, err := json.Marshal(settingsData)
+	if err != nil {
+		return settings, fmt.Errorf("failed to marshal settings data: %w", err)
+	}
+	if err := json.Unmarshal(jsonData, &settings); err != nil {
+		return settings, fmt.Errorf("failed to unmarshal settings: %w", err)
+	}
+
+	return settings, nil
 }
