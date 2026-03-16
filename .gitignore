@@ -17,3 +17,4 @@ Thumbs.db
 *.pem
 __debug*
 logs/*
+data/*

@@ -308,6 +308,7 @@ func (c *client) AcceptMR(ctx context.Context, mrID int, projectId string) error
 
 func (c *client) FindUserID(ctx context.Context, username string) (int, error) {
 	url := fmt.Sprintf("%s/users?username=%s", c.apiURL, username)
+	c.log.Debug().Msg("connect to gitlab: " + url)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

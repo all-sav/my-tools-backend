@@ -37,7 +37,7 @@ func NewSettingsDBRepository(opts ...Options) (settingsrepo.SettingsRepository, 
 	// Определяем путь к данным
 	dataDir := opt.DataDir
 	if dataDir == "" {
-		dataDir = "./data"
+		dataDir = "../../data"
 	}
 
 	// Создаем директорию если её нет
@@ -70,7 +70,7 @@ func NewSettingsDBRepository(opts ...Options) (settingsrepo.SettingsRepository, 
 		return nil, fmt.Errorf("failed to create settings bucket: %w", err)
 	}
 
-	defer db.Close()
+	// defer db.Close()
 
 	return &settingsDBRepository{
 		db:     db,

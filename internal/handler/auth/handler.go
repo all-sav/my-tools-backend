@@ -3,21 +3,25 @@ package auth
 import (
 	"net/http"
 
+	"mergenator/internal/infr/logger"
 	"mergenator/internal/service/auth"
 	"mergenator/pkg/dto"
 
 	"github.com/gin-gonic/gin"
+	"github.com/rs/zerolog"
 )
 
 type Handler struct {
 	authSvc auth.AuthService
+	log     *zerolog.Logger
 }
 
 func NewHandler(authSvc auth.AuthService) *Handler {
-	return &Handler{authSvc: authSvc}
+	return &Handler{authSvc: authSvc, log: logger.Get()}
 }
 
 func (h *Handler) Login(c *gin.Context) {
+	h.log.Debug().Msg("AUTH START")
 	var req struct {
 		Username   string `json:"username"`
 		Password   string `json:"password"`

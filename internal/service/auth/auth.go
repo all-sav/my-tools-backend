@@ -4,16 +4,20 @@ import (
 	"context"
 	"errors"
 
-	"github.com/google/uuid"
 	"mergenator/internal/client/gitlab"
 	"mergenator/internal/config"
+	"mergenator/internal/infr/logger"
 	"mergenator/internal/repository/redis"
+
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
 )
 
 type service struct {
 	cfg         *config.Config
 	sessionRepo redis.SessionRepository
 	gitlabCli   gitlab.GitLabClient
+	log         *zerolog.Logger
 }
 
 func NewAuthService(cfg *config.Config, repo redis.SessionRepository, cli gitlab.GitLabClient) AuthService {
@@ -21,12 +25,14 @@ func NewAuthService(cfg *config.Config, repo redis.SessionRepository, cli gitlab
 		cfg:         cfg,
 		sessionRepo: repo,
 		gitlabCli:   cli,
+		log:         logger.Get(),
 	}
 }
 
 func (s *service) Login(ctx context.Context, username, password, gitlabUser string) (string, int, error) {
 	// Проверка логина/пароля из конфига
 	if username != s.cfg.AuthUsername || password != s.cfg.AuthPassword {
+		s.log.Info().Str("username", username).Msg("invalid login credentials")
 		return "", 0, errors.New("invalid credentials")
 	}
 
@@ -44,6 +50,7 @@ func (s *service) Login(ctx context.Context, username, password, gitlabUser stri
 		}
 	} else {
 		userID, err = s.gitlabCli.FindUserID(ctx, gitlabUser)
+		s.log.Info().Str("username", username).Msg("user not found in gitlab")
 		if err != nil {
 			return "", 0, err
 		}
@@ -53,6 +60,8 @@ func (s *service) Login(ctx context.Context, username, password, gitlabUser stri
 	if err := s.sessionRepo.StoreUserSession(ctx, token, gitlabUser, userID, s.cfg.TokenTTL); err != nil {
 		return "", 0, err
 	}
+
+	s.log.Info().Str("username", username).Msg("user auth success")
 	return token, userID, nil
 }
 

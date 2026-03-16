@@ -11,6 +11,7 @@ import (
 	"mergenator/internal/config"
 	"mergenator/internal/handler/auth"
 	"mergenator/internal/handler/merge"
+	settingshandler "mergenator/internal/handler/settings"
 	"mergenator/internal/handler/webhook"
 	"mergenator/internal/handler/ws"
 	"mergenator/internal/infr/logger"
@@ -43,7 +44,7 @@ func main() {
 
 	// Redis клиент
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     cfg.RedisAddr,
+		Addr:     cfg.RedisHost + ":" + cfg.RedisPort,
 		Password: cfg.RedisPassword,
 		DB:       cfg.RedisDB,
 	})
@@ -73,6 +74,7 @@ func main() {
 	mergeHandler := merge.NewHandler(gitlabService, wsService)
 	webhookHandler := webhook.NewHandler(gitlabService, cfg.GitLabWebhookToken)
 	wsHandler := ws.NewHandler(wsService)
+	settingsHandler := settingshandler.NewHandler(settingsService)
 
 	// Роутер
 	router := gin.Default()
@@ -89,6 +91,9 @@ func main() {
 	{
 		authGroup.POST("/merge", mergeHandler.Merge)
 		authGroup.POST("/auth/logout", authHandler.Logout)
+
+		authGroup.GET("/settings", settingsHandler.Get)
+		authGroup.POST("/settings", settingsHandler.Save)
 	}
 
 	startServer(router, cfg)

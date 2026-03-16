@@ -2,16 +2,24 @@ package settings
 
 import (
 	"fmt"
+	"mergenator/internal/infr/logger"
 	settingsrepo "mergenator/internal/repository/settings"
+	"slices"
+
+	"github.com/rs/zerolog"
 )
+
+var availableModules = []string{"mergenator"}
 
 type service struct {
 	repo settingsrepo.SettingsRepository
+	log  *zerolog.Logger
 }
 
 func NewSettingsService(repo settingsrepo.SettingsRepository) SettingsService {
 	return &service{
 		repo: repo,
+		log:  logger.Get(),
 	}
 }
 
@@ -26,6 +34,16 @@ func (s *service) Get(module string) (any, error) {
 	return data, nil
 }
 
-func (s *service) Update() {
+func (s *service) Update(module string, data any) error {
+	if err := s.repo.Save(module, data); err != nil {
+		s.log.Err(err).Msg("settings saving error")
+		return err
+	}
 
+	s.log.Info().Interface("data", data).Msg("settings was updated")
+	return nil
+}
+
+func (s *service) HasModule(module string) bool {
+	return slices.Contains(availableModules, module)
 }

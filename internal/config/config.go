@@ -10,19 +10,19 @@ import (
 )
 
 type Config struct {
-	HTTPPort           string
-	WSPort             string
-	WSAllowedOrigin    string
+	HTTPPort        string
+	WSAllowedOrigin string
 
 	GitLabAPIURL       string
 	GitLabAccessToken  string
 	GitLabWebhookToken string
 
-	OverProxy           bool
-	SSLCertPem          string
-	SSLKeyPem           string
+	OverProxy  bool
+	SSLCertPem string
+	SSLKeyPem  string
 
-	RedisAddr     string
+	RedisHost     string
+	RedisPort     string
 	RedisPassword string
 	RedisDB       int
 
@@ -50,7 +50,6 @@ func Load() (*Config, error) {
 		ttl = 24 * time.Hour
 	}
 
-	// Парсим настройки логов
 	maxSize, _ := strconv.Atoi(getEnv("LOG_MAX_SIZE", "100"))
 	maxBackups, _ := strconv.Atoi(getEnv("LOG_MAX_BACKUPS", "3"))
 	maxAge, _ := strconv.Atoi(getEnv("LOG_MAX_AGE", "28"))
@@ -58,35 +57,37 @@ func Load() (*Config, error) {
 	console := getEnv("LOG_CONSOLE", "true") == "true"
 	jsonLog := getEnv("LOG_JSON", "false") == "true"
 
+	redisDB, _ := strconv.Atoi(getEnv("REDIS_DB", "0"))
+
 	return &Config{
-		HTTPPort:            getEnv("HTTP_PORT", "8080"),
-		WSPort:              getEnv("WS_PORT", "8086"),
-		WSAllowedOrigin:     getEnv("APP_URL", ""),
-		
-		GitLabAPIURL:        getEnv("GITLAB_API_URL", ""),
-		GitLabAccessToken:   getEnv("GITLAB_ACCESS_TOKEN", ""),
-		GitLabWebhookToken:  getEnv("GITLAB_WEBHOOK_TOKEN", ""),
+		HTTPPort:        getEnv("HTTP_PORT", "8080"),
+		WSAllowedOrigin: getEnv("APP_URL", ""),
 
-		OverProxy:           os.Getenv("OVER_PROXY") == "true",
-		SSLCertPem:          getEnv("SSL_CERT_PEM", ""),
-		SSLKeyPem:           getEnv("SSL_KEY_PEM", ""),
+		GitLabAPIURL:       getEnv("GITLAB_API_URL", ""),
+		GitLabAccessToken:  getEnv("GITLAB_ACCESS_TOKEN", ""),
+		GitLabWebhookToken: getEnv("GITLAB_WEBHOOK_TOKEN", ""),
 
-		RedisAddr:           getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:       os.Getenv("REDIS_PASSWORD"),
-		RedisDB:             0, // todo: вынести в env
+		OverProxy:  os.Getenv("OVER_PROXY") == "true",
+		SSLCertPem: getEnv("SSL_CERT_PEM", ""),
+		SSLKeyPem:  getEnv("SSL_KEY_PEM", ""),
 
-		AuthUsername:        getEnv("AUTH_USERNAME", ""),
-		AuthPassword:        getEnv("AUTH_PASSWORD", ""),
-		TokenTTL:            ttl,
+		RedisHost:     getEnv("REDIS_HOST", "localhost"),
+		RedisPort:     getEnv("REDIS_PORT", "6379"),
+		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+		RedisDB:       redisDB,
 
-		LogFile:             getEnv("LOG_FILE", "./logs/mergenator.log"),
-		LogLevel:            getEnv("LOG_LEVEL", "info"),
-		LogMaxSize:          maxSize,
-		LogMaxBackups:       maxBackups,
-		LogMaxAge:           maxAge,
-		LogCompress:         compress,
-		LogConsole:          console,
-		LogJSON:             jsonLog,
+		AuthUsername: getEnv("AUTH_USERNAME", ""),
+		AuthPassword: getEnv("AUTH_PASSWORD", ""),
+		TokenTTL:     ttl,
+
+		LogFile:       getEnv("LOG_FILE", "./logs/mergenator.log"),
+		LogLevel:      getEnv("LOG_LEVEL", "info"),
+		LogMaxSize:    maxSize,
+		LogMaxBackups: maxBackups,
+		LogMaxAge:     maxAge,
+		LogCompress:   compress,
+		LogConsole:    console,
+		LogJSON:       jsonLog,
 	}, nil
 }
 
