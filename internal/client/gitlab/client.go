@@ -11,6 +11,8 @@ type Repository struct {
 type GitLabClient interface {
 	BranchExists(ctx context.Context, branch, projectID string) (bool, error)
 	HasOpenMR(ctx context.Context, source, target, projectID string) (bool, int, string, error)
+	CountOpenMRs(ctx context.Context, projectID string) (int, error)
+	CountActiveBranches(ctx context.Context, projectID string) (int, error)
 	CreateMR(ctx context.Context, sourceBranch, title string, repo Repository) (string, error)
 	CreateBranch(ctx context.Context, sourceBranch, newBranch string, repo Repository) error
 	DeleteBranch(ctx context.Context, branch string, repo Repository) error

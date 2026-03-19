@@ -41,25 +41,30 @@ server {
     # Запрет индексации поисковиками
     add_header X-Robots-Tag "noindex, nofollow, nosnippet, noarchive" always;
 
+    # Фронтенд (статика Vue)
+    location / {
+        root /path/to/frontend/dist;
+        try_files $uri $uri/ /index.html;
+    }
+
     # Апишка бэкенда
     location /api {
         proxy_pass http://localhost:8085;
+        proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
+
+        # режем /api перед проксированием
+        rewrite ^/api(/.*)$ $1 break;
     }
 
     # Websockets
     location /ws {
-        proxy_pass http://localhost:8085;
+        proxy_pass http://localhost:8085/ws;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
-    }
-
-    # Todo: Фронтенд
-    location / {
-        
     }
 }
 ```

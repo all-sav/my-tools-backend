@@ -5,6 +5,10 @@
 # Использование .ONESHELL для корректной обработки многострочных команд
 .ONESHELL:
 
+# По умолчанию, если запустить просто `make`, поднимаем окружение:
+# Redis -> Backend.
+.DEFAULT_GOAL := up
+
 # Цвета для форматирования вывода
 YELLOW := \033[1;33m
 GREEN  := \033[1;32m
@@ -15,8 +19,9 @@ NC     := \033[0m # Без цвета
 REDIS_CONTAINER := mt-redis-server
 
 # Список всех доступных команд для .PHONY
-.PHONY: env-create \
-        redis-start redis-stop redis-rm redis-restart redis-cli redis-logs redis-status redis-flush
+.PHONY: ensure-env env-create \
+        redis-start redis-stop redis-rm redis-restart redis-cli redis-logs redis-status redis-flush \
+        backend-run backend-build backend-build-ubuntu backend-start up
 
 # ==============================================================================
 # ОСНОВНЫЕ КОМАНДЫ
@@ -24,9 +29,19 @@ REDIS_CONTAINER := mt-redis-server
 
 # Копирование env.example в .env (принудительное пересоздание)
 env-create:
-	echo "$(BLUE)📋 Создание/пересоздание файла .env из env.example...$(NC)\n"
+	@printf "%b" "$(BLUE)📋 Создание/пересоздание файла .env из env.example...$(NC)\n"
 	cp -f .env.example .env
-	echo "$(GREEN)✅ Файл .env создан/обновлен$(NC)\n"
+	@printf "%b" "$(GREEN)✅ Файл .env создан/обновлен$(NC)\n"
+
+# Проверка, что Makefile запущен из правильного каталога backend/
+ensure-env:
+	@if [ ! -f .env ]; then \
+		echo "$(RED)Error: missing backend/.env. Run: cd /Users/mac/Projects/myTools/backend && make$(NC)"; \
+		exit 1; \
+	fi
+
+# Общая команда: поднять Redis, затем запустить бэкенд.
+up: ensure-env redis-start backend-run
 
 # ==============================================================================
 # УПРАВЛЕНИЕ REDIS
@@ -202,3 +217,27 @@ redis-flush:
 	else \
 		echo "$(RED)Redis container not running$(NC)"; \
 	fi
+
+# ==============================================================================
+# УПРАВЛЕНИЕ БЭКЕНДОМ
+# ==============================================================================
+
+backend-run:
+	@echo "$(BLUE)Starting backend (go run)...$(NC)"
+	@cd cmd/mergenator && go run .
+
+backend-build:
+	@echo "$(BLUE)Building backend binary...$(NC)"
+	@mkdir -p bin
+	@go build -o bin/mergenator ./cmd/mergenator
+
+# Кросс-сборка под Ubuntu/VPS (Linux amd64).
+backend-build-ubuntu:
+	@echo "$(BLUE)Building backend for Ubuntu (linux/amd64)...$(NC)"
+	@mkdir -p bin
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o bin/mergenator-linux-amd64 ./cmd/mergenator
+
+backend-start:
+	@echo "$(BLUE)Starting backend (compiled)...$(NC)"
+	@cd cmd/mergenator && ../../bin/mergenator
+

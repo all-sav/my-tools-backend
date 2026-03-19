@@ -9,6 +9,7 @@ import (
 	"mergenator/internal/infr/logger"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -337,4 +338,80 @@ func (c *client) FindUserID(ctx context.Context, username string) (int, error) {
 	}
 
 	return users[0].ID, nil
+}
+
+func (c *client) CountOpenMRs(ctx context.Context, projectID string) (int, error) {
+	// GitLab возвращает общее количество в заголовке X-Total.
+	mrUrl := fmt.Sprintf(
+		"%s/projects/%s/merge_requests?state=opened&per_page=1",
+		c.apiURL,
+		url.PathEscape(projectID),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, mrUrl, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Private-Token", c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("GitLab API error (open MRs): %d %s", resp.StatusCode, string(body))
+	}
+
+	total := resp.Header.Get("X-Total")
+	if total == "" {
+		return 0, nil
+	}
+
+	val, err := strconv.Atoi(total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse X-Total=%q: %w", total, err)
+	}
+
+	return val, nil
+}
+
+func (c *client) CountActiveBranches(ctx context.Context, projectID string) (int, error) {
+	// Общее количество веток приходит в X-Total.
+	branchesUrl := fmt.Sprintf(
+		"%s/projects/%s/repository/branches?per_page=1",
+		c.apiURL,
+		url.PathEscape(projectID),
+	)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, branchesUrl, nil)
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Private-Token", c.token)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return 0, fmt.Errorf("GitLab API error (branches): %d %s", resp.StatusCode, string(body))
+	}
+
+	total := resp.Header.Get("X-Total")
+	if total == "" {
+		return 0, nil
+	}
+
+	val, err := strconv.Atoi(total)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse X-Total=%q: %w", total, err)
+	}
+
+	return val, nil
 }

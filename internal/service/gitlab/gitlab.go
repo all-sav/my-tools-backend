@@ -10,6 +10,7 @@ import (
 
 	"mergenator/internal/client/gitlab"
 	"mergenator/internal/infr/logger"
+	"mergenator/internal/models"
 	"mergenator/internal/service/settings"
 	"mergenator/internal/service/websocket"
 	"mergenator/internal/utils"
@@ -212,6 +213,44 @@ func (s *service) HandlePush(ctx context.Context, branch, projectID string) erro
 	return nil
 }
 
+func (s *service) GetStats(ctx context.Context) (models.Stats, error) {
+	settings, err := s.getMergenatorSettings()
+	if err != nil {
+		return models.Stats{}, err
+	}
+
+	backendMRs, err := s.gitlabCli.CountOpenMRs(ctx, settings.BackendProjectID)
+	if err != nil {
+		return models.Stats{}, fmt.Errorf("failed to count open MRs (backend): %w", err)
+	}
+	frontendMRs, err := s.gitlabCli.CountOpenMRs(ctx, settings.FrontendProjectID)
+	if err != nil {
+		return models.Stats{}, fmt.Errorf("failed to count open MRs (frontend): %w", err)
+	}
+
+	backendBranches, err := s.gitlabCli.CountActiveBranches(ctx, settings.BackendProjectID)
+	if err != nil {
+		return models.Stats{}, fmt.Errorf("failed to count branches (backend): %w", err)
+	}
+	frontendBranches, err := s.gitlabCli.CountActiveBranches(ctx, settings.FrontendProjectID)
+	if err != nil {
+		return models.Stats{}, fmt.Errorf("failed to count branches (frontend): %w", err)
+	}
+
+	return models.Stats{
+		MrCreated:      frontendMRs + backendMRs,
+		ActiveBranches: frontendBranches + backendBranches,
+		MrByRepo: models.RepoStats{
+			Frontend: frontendMRs,
+			Backend:  backendMRs,
+		},
+		BranchesByRepo: models.RepoStats{
+			Frontend: frontendBranches,
+			Backend:  backendBranches,
+		},
+	}, nil
+}
+
 func (s *service) sendMsg(userID int, msg, msgType string) {
 	_ = s.wsService.SendMessageToUser(context.Background(), userID, msg, msgType)
 }
@@ -223,7 +262,7 @@ func (s *service) getMergenatorSettings() (MergenatorSettings, error) {
 	if err != nil {
 		return settings, fmt.Errorf("failed to get settings data: %w", err)
 	}
-	if settingsData != nil {
+	if settingsData == nil {
 		return settings, fmt.Errorf("mergenator settings is empty")
 	}
 

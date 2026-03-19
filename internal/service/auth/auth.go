@@ -50,7 +50,7 @@ func (s *service) Login(ctx context.Context, username, password, gitlabUser stri
 		}
 	} else {
 		userID, err = s.gitlabCli.FindUserID(ctx, gitlabUser)
-		s.log.Info().Str("username", username).Msg("user not found in gitlab")
+
 		if err != nil {
 			return "", 0, err
 		}
@@ -61,7 +61,7 @@ func (s *service) Login(ctx context.Context, username, password, gitlabUser stri
 		return "", 0, err
 	}
 
-	s.log.Info().Str("username", username).Msg("user auth success")
+	s.log.Info().Str("username", gitlabUser).Msg("user auth success")
 	return token, userID, nil
 }
 

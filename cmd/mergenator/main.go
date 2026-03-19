@@ -12,6 +12,7 @@ import (
 	"mergenator/internal/handler/auth"
 	"mergenator/internal/handler/merge"
 	settingshandler "mergenator/internal/handler/settings"
+	statshandler "mergenator/internal/handler/stats"
 	"mergenator/internal/handler/webhook"
 	"mergenator/internal/handler/ws"
 	"mergenator/internal/infr/logger"
@@ -75,6 +76,7 @@ func main() {
 	webhookHandler := webhook.NewHandler(gitlabService, cfg.GitLabWebhookToken)
 	wsHandler := ws.NewHandler(wsService)
 	settingsHandler := settingshandler.NewHandler(settingsService)
+	statsHandler := statshandler.NewHandler(gitlabService)
 
 	// Роутер
 	router := gin.Default()
@@ -94,6 +96,7 @@ func main() {
 
 		authGroup.GET("/settings", settingsHandler.Get)
 		authGroup.POST("/settings", settingsHandler.Save)
+		authGroup.GET("/stats", statsHandler.Get)
 	}
 
 	startServer(router, cfg)

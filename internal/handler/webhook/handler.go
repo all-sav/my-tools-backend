@@ -62,7 +62,7 @@ func (h *Handler) Handle(c *gin.Context) {
 	projectID := webhookData.Project.ID
 
 	// Вызываем сервис для обработки push
-	if err := h.gitlabService.HandlePush(c.Request.Context(), branch, string(projectID)); err != nil {
+	if err := h.gitlabService.HandlePush(c.Request.Context(), branch, fmt.Sprintf("%d", projectID)); err != nil {
 		// Логируем ошибку, но клиенту возвращаем 200, чтобы GitLab не паниковал
 		h.log.Err(err).Msg("Webhook error")
 	}
