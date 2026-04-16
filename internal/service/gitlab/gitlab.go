@@ -26,15 +26,16 @@ type service struct {
 }
 
 type MergenatorSettings struct {
-	BackendProjectID    string `json:"backend_project_id"`
-	FrontendProjectID   string `json:"frontend_project_id"`
-	BackendStandBranch  string `json:"backend_stand_branch"`
-	FrontendStandBranch string `json:"frontend_stand_branch"`
-	CIMainBranch        string `json:"ci_main_branch"`
-	RequiredPrefix      string `json:"required_prefix"`
-	Prefix              string `json:"prefix"`
-	CIPrefix            string `json:"ci_prefix"`
-	UpdatedAt           int64  `json:"updated_at"`
+	BackendProjectID    string   `json:"backend_project_id"`
+	FrontendProjectID   string   `json:"frontend_project_id"`
+	BackendStandBranch  string   `json:"backend_stand_branch"`
+	FrontendStandBranch string   `json:"frontend_stand_branch"`
+	CIMainBranch        string   `json:"ci_main_branch"`
+	RequiredPrefix      string   `json:"required_prefix"`
+	Prefix              string   `json:"prefix"`
+	CIPrefix            string   `json:"ci_prefix"`
+	DockerComposePaths  []string `json:"docker_compose_paths,omitempty"`
+	UpdatedAt           int64    `json:"updated_at"`
 }
 
 func NewGitlabService(gitlabCli gitlab.GitLabClient, wsService websocket.WebSocketService, settingsService settings.SettingsService) GitlabService {

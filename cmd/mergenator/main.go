@@ -20,6 +20,7 @@ import (
 	rd "mergenator/internal/repository/redis"
 	"mergenator/internal/repository/settings/dbrepo"
 	authSvc "mergenator/internal/service/auth"
+	dockerSvc "mergenator/internal/service/docker"
 	gitlabSvc "mergenator/internal/service/gitlab"
 	settingsSvc "mergenator/internal/service/settings"
 	wsSvc "mergenator/internal/service/websocket"
@@ -68,6 +69,7 @@ func main() {
 	wsService := wsSvc.NewWebSocketService([]string{cfg.WSAllowedOrigin}, sessionRepo, cfg.TokenTTL)
 	authService := authSvc.NewAuthService(cfg, sessionRepo, gitlabClient)
 	settingsService := settingsSvc.NewSettingsService(settingsRepo)
+	dockerService := dockerSvc.NewDockerService(settingsService)
 	gitlabService := gitlabSvc.NewGitlabService(gitlabClient, wsService, settingsService)
 
 	// Хендлеры
@@ -76,7 +78,7 @@ func main() {
 	webhookHandler := webhook.NewHandler(gitlabService, cfg.GitLabWebhookToken)
 	wsHandler := ws.NewHandler(wsService)
 	settingsHandler := settingshandler.NewHandler(settingsService)
-	statsHandler := statshandler.NewHandler(gitlabService)
+	statsHandler := statshandler.NewHandler(gitlabService, dockerService)
 
 	// Роутер
 	router := gin.Default()
